@@ -1,7 +1,7 @@
 import json
 
 from flask import jsonify, request, Flask
-from models import User, Follow, db
+from models import User, followers, db
 from redis import Redis
 
 app = Flask(__name__)
@@ -26,8 +26,8 @@ def serialize(obj, secret=False):
     return data
 
 
-def flush_redis_follows(follower_id: int, followed_id: int):
-    redis.delete(f'followers:{followed_id}')
+def flush_redis_follows(follower_id: int, following_id: int):
+    redis.delete(f'followers:{following_id}')
     redis.delete(f'following:{follower_id}')
 
 
@@ -35,32 +35,51 @@ def flush_redis_follows(follower_id: int, followed_id: int):
 def follow_user():
     data = request.get_json()
     follower_id = data['follower_id']
-    followed_id = data['followed_id']
+    following_id = data['following_id']
 
-    follow = Follow(follower_id=follower_id, followed_id=followed_id)
-    db.session.add(follow)
+    user = User.query.filter_by(id=follower_id).first()
+    if not user:
+        return jsonify({'message': 'Follower user not found'}), 404
+    following = User.query.filter_by(id=following_id).first()
+    if not following:
+        return jsonify({'message': 'Followed user not found'}), 404
+
+    # Check if already following
+    if following in user.following:
+        return jsonify({'message': 'Already following'}), 400
+    else:
+        user.following.append(following)
+
     db.session.commit()
 
     # Invalidate Redis cache
-    flush_redis_follows(follower_id, followed_id)
+    flush_redis_follows(follower_id, following_id)
 
-    return jsonify({'message': 'User followed successfully'}), 201
+    return jsonify({'message': 'User following successfully'}), 201
 
 
 @app.route('/unfollow', methods=['POST'])
 def unfollow_user():
     data = request.get_json()
     follower_id = data['follower_id']
-    followed_id = data['followed_id']
+    following_id = data['following_id']
 
-    follow = Follow.query.filter_by(follower_id=follower_id, followed_id=followed_id).first()
-    if follow:
-        db.session.delete(follow)
-        db.session.commit()
-        flush_redis_follows(follower_id, followed_id)
-        return jsonify({'message': 'User unfollowed successfully'}), 200
-    else:
-        return jsonify({'message': 'Follow relationship not found'}), 404
+    user = User.query.filter_by(id=follower_id).first()
+    if not user:
+        return jsonify({'message': 'Follower user not found'}), 404
+    following = User.query.filter_by(id=following_id).first()
+    if not following:
+        return jsonify({'message': 'Followed user not found'}), 404
+
+    if following not in user.following:
+        return jsonify({'message': 'Not following'}), 400
+
+    user.following.remove(following)
+    db.session.commit()
+
+    flush_redis_follows(follower_id, following_id)
+
+    return jsonify({'message': 'User unfollowing successfully'}), 200
 
 
 @app.route('/followers/<int:user_id>', methods=['GET'])
@@ -72,8 +91,9 @@ def get_followers(user_id):
         print('hit')
     else:
         print('miss')
-        followers = User.query.join(Follow, Follow.follower_id == User.id).filter(Follow.followed_id == user_id).all()
-        follower_list = [serialize(follower, True) for follower in followers]
+        user = User.query.filter_by(id=user_id).first()
+
+        follower_list = [serialize(follower, True) for follower in user.followers]
         # Cache followers in Redis
         redis.set(f'followers:{user_id}', json.dumps(follower_list))
     return jsonify({'followers': follower_list}), 200
@@ -84,17 +104,22 @@ def get_following(user_id):
     offset = request.args.get('offset', default=0, type=int)
     limit = 20  # Number of results per request
     # Check if user_id is cached in Redis
-    cached_following = redis.get(f'following:{user_id}:offset:{offset}')
+    cached_following = redis.get(f'following:{user_id}')
     if cached_following:
         following_list = json.loads(cached_following)
+        if offset * limit >= len(following_list):
+            return jsonify({'message': 'No more users to show'}), 404
+        following_list = following_list[offset * limit: min((offset + 1) * limit, len(following_list))]
         print('hit')
     else:
         print('miss')
-        following = User.query.join(Follow, Follow.followed_id == User.id).filter(Follow.follower_id == user_id).offset(
-            offset * limit).limit(limit).all()
-        following_list = [followed.username for followed in following]
+        user = User.query.filter_by(id=user_id).first()
+        following_list = [serialize(following) for following in user.following]
         # Cache following in Redis
-        redis.set(f'following:{user_id}:offset:{offset}', json.dumps(following_list))
+        redis.set(f'following:{user_id}', json.dumps(following_list))
+        if offset * limit >= len(following_list):
+            return jsonify({'message': 'No more users to show'}), 404
+        following_list = following_list[offset * limit: min((offset + 1) * limit, len(following_list))]
     if len(following_list) == 0:
         return jsonify({'message': 'No more users to show'}), 404
     return jsonify({'following': following_list}), 200

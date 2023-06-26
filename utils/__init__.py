@@ -2,7 +2,7 @@ import random
 
 from app import app, db
 from faker import Faker
-from models import User, Follow
+from models import User, followers
 
 
 def generate_users(user_amount=50):
@@ -25,12 +25,9 @@ def generate_followings(following_amount=30):
     for user in users:
         for _ in range(num_followings):
             random_user = random.choice(users)
-            if random_user is not user:
-                follow = Follow(follower_id=user.id, followed_id=random_user.id)
-                # check if follow relationship already exists
-                if not Follow.query.filter_by(follower_id=user.id, followed_id=random_user.id).first():
-                    db.session.add(follow)
-                    db.session.commit()
+            if random_user is not user and random_user not in user.following:
+                user.following.append(random_user)
+                db.session.commit()
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ from faker import Faker
 from models import User, Follow
 
 
-def generate_users(user_amount=10):
+def generate_users(user_amount=50):
     num_users = int(user_amount)  # Default to generating 10 users
 
     fake = Faker()
@@ -17,13 +17,13 @@ def generate_users(user_amount=10):
         db.session.commit()
 
 
-def generate_followers(follower_amount=10):
-    num_followers = int(follower_amount)  # Default to generating 10 followers
+def generate_followings(following_amount=30):
+    num_followings = int(following_amount)  # Default to generating 10 followers
 
     users = User.query.all()
 
     for user in users:
-        for _ in range(num_followers):
+        for _ in range(num_followings):
             random_user = random.choice(users)
             if random_user is not user:
                 follow = Follow(follower_id=user.id, followed_id=random_user.id)
@@ -37,4 +37,4 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
         generate_users()
-        generate_followers()
+        generate_followings()

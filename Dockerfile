@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Install Redis
 RUN apt-get update && apt-get install -y redis-server
 
-# Copy the Redis configuration file
-COPY redis.conf /etc/redis/redis.conf
+## Copy the Redis configuration file
+#COPY redis.conf /etc/redis/redis.conf
 
 # Copy the Flask application code into the container
 COPY . .

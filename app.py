@@ -84,7 +84,7 @@ def get_following(user_id):
     offset = request.args.get('offset', default=0, type=int)
     limit = 20  # Number of results per request
     # Check if user_id is cached in Redis
-    cached_following = redis.get(f'following:{user_id}')
+    cached_following = redis.get(f'following:{user_id}:offset:{offset}')
     if cached_following:
         following_list = json.loads(cached_following)
         print('hit')
@@ -94,7 +94,7 @@ def get_following(user_id):
             offset * limit).limit(limit).all()
         following_list = [followed.username for followed in following]
         # Cache following in Redis
-        redis.set(f'following:{user_id}', json.dumps(following_list))
+        redis.set(f'following:{user_id}:offset:{offset}', json.dumps(following_list))
     if len(following_list) == 0:
         return jsonify({'message': 'No more users to show'}), 404
     return jsonify({'following': following_list}), 200
